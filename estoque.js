@@ -1979,3 +1979,21 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }, 1000);
 });
+
+document.addEventListener('DOMContentLoaded', () => {
+    const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+    const sidebar = document.querySelector('.sidebar');
+    const overlay = document.getElementById('overlay');
+
+    if (!mobileMenuBtn || !sidebar || !overlay) return;
+
+    mobileMenuBtn.addEventListener('click', () => {
+        sidebar.classList.add('active');
+        overlay.classList.add('active');
+    });
+
+    overlay.addEventListener('click', () => {
+        sidebar.classList.remove('active');
+        overlay.classList.remove('active');
+    });
+});
