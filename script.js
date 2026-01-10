@@ -285,7 +285,7 @@ function carregarProdutosParaPedido(filtro = '') {
     });
 }
 
-// Adicionar produto ao pedido
+// Procure pela função adicionarProdutoPedido e atualize-a:
 function adicionarProdutoPedido(produtoId) {
     const produto = estoque.find(p => p.id === produtoId);
     
@@ -297,20 +297,22 @@ function adicionarProdutoPedido(produtoId) {
         return;
     }
     
-    // Pedir quantidade
-    const quantidade = prompt(`Quantidade de "${produto.nome}" para o pedido? (Disponível: ${produto.quantidade})`, "1");
-    const qtd = parseInt(quantidade);
+    // ALTERAÇÃO: Quantidade agora é opcional e aceita texto
+    const quantidade = prompt(`Quantidade de "${produto.nome}" para o pedido? (Deixe em branco para "A definir" ou digite texto livre)\nDisponível: ${produto.quantidade}`, "A definir");
     
-    if (isNaN(qtd) || qtd <= 0) {
-        mostrarNotificacao('Quantidade inválida!', 'erro');
-        return;
+    // Se cancelar ou não preencher, usar "A definir"
+    if (quantidade === null || quantidade.trim() === "") {
+        mostrarNotificacao('Produto adicionado com quantidade "A definir"!', 'sucesso');
+        qtd = "A definir";
+    } else {
+        qtd = quantidade.trim(); // Pode ser número ou texto
     }
     
     // Adicionar ao array de produtos selecionados
     produtosSelecionados.push({
         id: produto.id,
         nome: produto.nome,
-        quantidade: qtd,
+        quantidade: qtd, // AGORA PODE SER TEXTO OU NÚMERO
         disponivel: produto.quantidade,
         minimo: produto.quantidadeMinima,
         validade: produto.validade,
@@ -333,23 +335,23 @@ function adicionarProdutoManual() {
     if (!nomeInput || !quantidadeInput) return;
     
     const nome = nomeInput.value.trim();
-    const quantidade = parseInt(quantidadeInput.value);
+    const quantidade = quantidadeInput.value.trim(); // ALTERAÇÃO: Agora é texto
     
     if (!nome) {
         mostrarNotificacao('Digite o nome do produto!', 'erro');
         return;
     }
     
-    if (isNaN(quantidade) || quantidade <= 0) {
-        mostrarNotificacao('Quantidade inválida!', 'erro');
-        return;
-    }
+    // ALTERAÇÃO: Removida validação numérica, aceita qualquer texto
+    
+    // Se vazio, usar "A definir"
+    const qtd = quantidade || "A definir";
     
     // Adicionar ao array de produtos selecionados
     produtosSelecionados.push({
         id: `manual_${pedidoIdCounter++}`,
         nome: nome,
-        quantidade: quantidade,
+        quantidade: qtd, // AGORA É TEXTO
         disponivel: 0,
         minimo: 0,
         validade: null,
@@ -359,7 +361,7 @@ function adicionarProdutoManual() {
     
     // Limpar campos
     nomeInput.value = '';
-    quantidadeInput.value = '1';
+    quantidadeInput.value = '';
     
     // Atualizar interface
     atualizarListaPedidosSelecionados();
@@ -367,6 +369,7 @@ function adicionarProdutoManual() {
     mostrarNotificacao(`Produto "${nome}" adicionado manualmente ao pedido!`, 'sucesso');
 }
 
+// Atualizar lista de produtos selecionados
 // Atualizar lista de produtos selecionados
 function atualizarListaPedidosSelecionados() {
     if (!pedidosSelecionadosLista) return;
@@ -382,17 +385,38 @@ function atualizarListaPedidosSelecionados() {
     
     if (emptyPedidosSelecionados) emptyPedidosSelecionados.style.display = 'none';
     
-    // Calcular totais
+    // Calcular totais - CORREÇÃO: Calcular apenas valores numéricos
     const totalItens = produtosSelecionados.length;
-    const totalQuantidade = produtosSelecionados.reduce((total, produto) => total + produto.quantidade, 0);
+    let totalQuantidadeNumerica = 0;
+    let itensComQuantidadeNumerica = 0;
+    
+    produtosSelecionados.forEach(produto => {
+        const qtd = parseInt(produto.quantidade);
+        if (!isNaN(qtd)) {
+            totalQuantidadeNumerica += qtd;
+            itensComQuantidadeNumerica++;
+        }
+    });
     
     if (pedidosSelecionadosCount) pedidosSelecionadosCount.textContent = totalItens;
-    if (pedidosQuantidadeTotal) pedidosQuantidadeTotal.textContent = totalQuantidade;
+    
+    // Mostrar quantidade total apenas se houver valores numéricos
+    if (pedidosQuantidadeTotal) {
+        if (itensComQuantidadeNumerica > 0) {
+            pedidosQuantidadeTotal.textContent = totalQuantidadeNumerica;
+        } else {
+            pedidosQuantidadeTotal.textContent = 'A definir';
+        }
+    }
     
     // Adicionar cada produto selecionado
     produtosSelecionados.forEach((produto, index) => {
         const div = document.createElement('div');
         div.className = 'pedido-item-selecionado';
+        
+        // Verificar se a quantidade é numérica
+        const qtdNum = parseInt(produto.quantidade);
+        const isQuantidadeNumerica = !isNaN(qtdNum);
         
         div.innerHTML = `
             <div class="pedido-item-header">
@@ -404,7 +428,7 @@ function atualizarListaPedidosSelecionados() {
             <div class="pedido-item-detalhes">
                 <div>
                     <small>Quantidade:</small>
-                    <span><strong>${produto.quantidade}</strong> unidade(s)</span>
+                    <span><strong>${produto.quantidade}</strong> ${isQuantidadeNumerica ? 'unidade(s)' : ''}</span>
                 </div>
                 <div>
                     <small>Disponível no estoque:</small>
@@ -461,12 +485,12 @@ function limparPedidoCompleto() {
     mostrarNotificacao('Pedido limpo com sucesso!', 'sucesso');
 }
 
-// Gerar relatório PDF
+// Gerar relatório PDF - VERSÃO MELHORADA
 function gerarRelatorioPDF() {
     // Verificar se jsPDF está disponível
-    if (typeof jsPDF === 'undefined') {
-        mostrarNotificacao('Biblioteca PDF não carregada. Recarregue a página.', 'erro');
-        console.error('jsPDF não está disponível. Certifique-se de incluir a biblioteca no HTML.');
+    if (typeof jspdf === 'undefined') {
+        mostrarNotificacao('Biblioteca PDF não carregada. Certifique-se de que a biblioteca jspdf está incluída no seu HTML.', 'erro');
+        console.error('jspdf não está disponível.');
         return;
     }
     
@@ -493,175 +517,318 @@ function gerarRelatorioPDF() {
     }
     
     try {
-        // Criar PDF
+        // Criar PDF em paisagem
         const { jsPDF } = window.jspdf;
-        const doc = new jsPDF();
+        const doc = new jsPDF('landscape');
         
-        // Configurações da página
+        // Configurações da página em paisagem
         const pageWidth = doc.internal.pageSize.getWidth();
         const pageHeight = doc.internal.pageSize.getHeight();
+        const margin = 15;
+        const contentWidth = pageWidth - (margin * 2);
         
-        // Cabeçalho com logo
+        // Cabeçalho com logo e informações da empresa
         try {
-            // Tentar carregar a logo
-            const logoUrl = 'logopc.png';
-            doc.addImage(logoUrl, 'PNG', 15, 10, 30, 30);
-        } catch (e) {
-            // Se a logo não existir, usar texto
-            console.log('Logo não encontrada, usando texto alternativo');
+            // Tenta carregar a imagem logoPC.png
+            const logoWidth = 35;
+            const logoHeight = 35;
+            doc.addImage('logoPC.png', 'PNG', margin, margin, logoWidth, logoHeight);
+            
+            // Informações da empresa ao lado da logo
             doc.setFontSize(16);
             doc.setFont('helvetica', 'bold');
-            doc.text('📦 StockControl', 50, 20);
+            doc.text('StockControl System', margin + logoWidth + 10, margin + 10);
+            
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            doc.text('Sistema de Controle de Estoque', margin + logoWidth + 10, margin + 18);
+            doc.text('Relatório de Pedidos', margin + logoWidth + 10, margin + 25);
+        } catch (error) {
+            // Se a imagem não existir, usa apenas texto
+            console.log('Logo não encontrada, usando texto apenas');
+            doc.setFontSize(18);
+            doc.setFont('helvetica', 'bold');
+            doc.text('📦 StockControl System', margin, margin + 10);
+            
+            doc.setFontSize(11);
+            doc.setFont('helvetica', 'normal');
+            doc.text('Sistema de Controle de Estoque - Relatório de Pedidos', margin, margin + 18);
         }
         
-        // Título
-        doc.setFontSize(20);
+        // Informações do pedido à direita
+        doc.setFontSize(10);
         doc.setFont('helvetica', 'bold');
-        doc.text('StockControl - Relatório de Pedidos', pageWidth / 2, 20, { align: 'center' });
+        doc.text('Nº DO PEDIDO:', pageWidth - margin - 80, margin + 10);
+        doc.text('DATA EMISSÃO:', pageWidth - margin - 80, margin + 18);
+        doc.text('PRIORIDADE:', pageWidth - margin - 80, margin + 26);
         
-        doc.setFontSize(12);
         doc.setFont('helvetica', 'normal');
-        doc.text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR')}`, pageWidth / 2, 28, { align: 'center' });
+        doc.text(`PED${Date.now().toString().slice(-6)}`, pageWidth - margin - 30, margin + 10);
+        doc.text(new Date().toLocaleDateString('pt-BR'), pageWidth - margin - 30, margin + 18);
+        
+        // Cor da prioridade
+        const prioridadeUpper = prioridade.toUpperCase();
+        let prioridadeColor = '#2ecc71'; // verde para normal
+        if (prioridade === 'alta') prioridadeColor = '#f39c12'; // laranja
+        if (prioridade === 'urgente') prioridadeColor = '#e74c3c'; // vermelho
+        if (prioridade === 'baixa') prioridadeColor = '#95a5a6'; // cinza
+        
+        doc.setTextColor(prioridadeColor);
+        doc.text(prioridadeUpper, pageWidth - margin - 30, margin + 26);
+        doc.setTextColor(0, 0, 0);
         
         // Linha divisória
         doc.setDrawColor(200, 200, 200);
-        doc.line(15, 35, pageWidth - 15, 35);
+        doc.line(margin, margin + 35, pageWidth - margin, margin + 35);
         
-        let yPos = 45;
+        // Informações do solicitante
+        let yPos = margin + 50;
         
-        // Informações do pedido
-        doc.setFontSize(14);
+        doc.setFontSize(12);
         doc.setFont('helvetica', 'bold');
-        doc.text('INFORMAÇÕES DO PEDIDO', 15, yPos);
+        doc.text('INFORMAÇÕES DO SOLICITANTE', margin, yPos);
         
         yPos += 8;
         
         doc.setFontSize(10);
         doc.setFont('helvetica', 'normal');
         
-        // Coluna 1
-        doc.text(`Setor: ${setor.toUpperCase()}`, 15, yPos);
-        doc.text(`Funcionário: ${funcionario}`, 15, yPos + 5);
+        // Informações em colunas
+        doc.text(`Setor: ${setor.toUpperCase()}`, margin, yPos);
+        doc.text(`Funcionário: ${funcionario}`, margin + 120, yPos);
+        doc.text(`Data do Pedido: ${new Date(dataPedido).toLocaleDateString('pt-BR')}`, margin + 240, yPos);
         
-        // Coluna 2
-        doc.text(`Data do Pedido: ${new Date(dataPedido).toLocaleDateString('pt-BR')}`, pageWidth / 2, yPos);
-        doc.text(`Prioridade: ${prioridade.toUpperCase()}`, pageWidth / 2, yPos + 5);
+        yPos += 7;
         
-        yPos += 15;
-        
-        // Observações
+        // Observações em uma área destacada
         if (observacoes) {
+            yPos += 10;
             doc.setFont('helvetica', 'bold');
-            doc.text('OBSERVAÇÕES:', 15, yPos);
-            yPos += 5;
+            doc.text('OBSERVAÇÕES:', margin, yPos);
+            yPos += 7;
             
             doc.setFont('helvetica', 'normal');
-            const observacoesLines = doc.splitTextToSize(observacoes, pageWidth - 30);
-            doc.text(observacoesLines, 15, yPos);
-            yPos += observacoesLines.length * 5 + 5;
+            const observacoesLines = doc.splitTextToSize(observacoes, contentWidth);
+            doc.text(observacoesLines, margin, yPos);
+            yPos += observacoesLines.length * 6 + 15;
+        } else {
+            yPos += 15;
         }
         
-        // Tabela de produtos
-        doc.setFontSize(14);
+        // Tabela de produtos - cabeçalho
+        doc.setFontSize(12);
         doc.setFont('helvetica', 'bold');
-        doc.text('PRODUTOS SOLICITADOS', 15, yPos);
+        doc.text('PRODUTOS SOLICITADOS', margin, yPos);
         
         yPos += 8;
         
-        // Cabeçalho da tabela
-        doc.setFillColor(67, 97, 238);
+        // Cabeçalho da tabela com fundo colorido
+        doc.setFillColor(67, 97, 238); // Azul
         doc.setDrawColor(67, 97, 238);
+        doc.rect(margin, yPos, contentWidth, 10, 'F');
         doc.setTextColor(255, 255, 255);
-        doc.rect(15, yPos, pageWidth - 30, 8, 'F');
         
-        doc.setFontSize(10);
-        doc.text('Produto', 17, yPos + 6);
-        doc.text('Quantidade', 90, yPos + 6);
-        doc.text('Estoque Atual', 125, yPos + 6);
-        doc.text('Situação', 160, yPos + 6);
+        // Colunas da tabela ajustadas para paisagem
+        const colWidths = [90, 80, 50, 60, 50, 50, 40];
+        let currentX = margin + 5;
         
-        yPos += 8;
+        doc.setFontSize(9);
+        doc.text('PRODUTO', currentX, yPos + 7);
+        currentX += colWidths[0];
+        
+        doc.text('QUANTIDADE', currentX, yPos + 7);
+        currentX += colWidths[1];
+        
+        doc.text('ESTOQUE ATUAL', currentX, yPos + 7);
+        currentX += colWidths[2];
+        
+        doc.text('MÍNIMO', currentX, yPos + 7);
+        currentX += colWidths[3];
+        
+        doc.text('VALIDADE', currentX, yPos + 7);
+        currentX += colWidths[4];
+        
+        doc.text('DISPONÍVEL', currentX, yPos + 7);
+        currentX += colWidths[5];
+        
+        doc.text('STATUS', currentX, yPos + 7);
+        
+        yPos += 10;
         doc.setTextColor(0, 0, 0);
         
         // Dados dos produtos
-        let linha = 0;
+        let totalQuantidadeNumerica = 0;
+        let itensComQuantidadeNumerica = 0;
+        
         produtosSelecionados.forEach((produto, index) => {
             // Verificar se precisa de nova página
-            if (yPos > pageHeight - 30) {
-                doc.addPage();
-                yPos = 20;
+            if (yPos > pageHeight - 40) {
+                doc.addPage('landscape');
+                yPos = margin + 20;
                 
                 // Cabeçalho da tabela na nova página
                 doc.setFillColor(67, 97, 238);
                 doc.setDrawColor(67, 97, 238);
+                doc.rect(margin, yPos, contentWidth, 10, 'F');
                 doc.setTextColor(255, 255, 255);
-                doc.rect(15, yPos, pageWidth - 30, 8, 'F');
                 
-                doc.setFontSize(10);
-                doc.text('Produto', 17, yPos + 6);
-                doc.text('Quantidade', 90, yPos + 6);
-                doc.text('Estoque Atual', 125, yPos + 6);
-                doc.text('Situação', 160, yPos + 6);
+                currentX = margin + 5;
+                doc.setFontSize(9);
+                doc.text('PRODUTO', currentX, yPos + 7);
+                currentX += colWidths[0];
+                doc.text('QUANTIDADE', currentX, yPos + 7);
+                currentX += colWidths[1];
+                doc.text('ESTOQUE ATUAL', currentX, yPos + 7);
+                currentX += colWidths[2];
+                doc.text('MÍNIMO', currentX, yPos + 7);
+                currentX += colWidths[3];
+                doc.text('VALIDADE', currentX, yPos + 7);
+                currentX += colWidths[4];
+                doc.text('DISPONÍVEL', currentX, yPos + 7);
+                currentX += colWidths[5];
+                doc.text('STATUS', currentX, yPos + 7);
                 
-                yPos += 8;
+                yPos += 10;
                 doc.setTextColor(0, 0, 0);
             }
             
-            // Alternar cores das linhas
-            if (linha % 2 === 0) {
-                doc.setFillColor(240, 240, 240);
-                doc.rect(15, yPos, pageWidth - 30, 8, 'F');
+            // Alternar cores das linhas para melhor legibilidade
+            if (index % 2 === 0) {
+                doc.setFillColor(245, 245, 245);
+                doc.rect(margin, yPos, contentWidth, 10, 'F');
             }
             
-            doc.setFontSize(9);
-            doc.text(produto.nome.substring(0, 40), 17, yPos + 6);
-            doc.text(produto.quantidade.toString(), 90, yPos + 6);
-            doc.text(produto.manual ? 'N/A' : produto.disponivel.toString(), 125, yPos + 6);
+            doc.setFontSize(8);
             
-            // Situação
+            // Coluna 1: Produto
+            currentX = margin + 5;
+            const nomeProduto = produto.nome.length > 30 ? produto.nome.substring(0, 30) + '...' : produto.nome;
+            doc.text(nomeProduto, currentX, yPos + 7);
+            currentX += colWidths[0];
+            
+            // Coluna 2: Quantidade
+            const qtdTexto = String(produto.quantidade);
+            doc.text(qtdTexto, currentX, yPos + 7);
+            
+            // Calcular total numérico se for número
+            const qtdNumerica = parseInt(produto.quantidade);
+            if (!isNaN(qtdNumerica)) {
+                totalQuantidadeNumerica += qtdNumerica;
+                itensComQuantidadeNumerica++;
+            }
+            
+            currentX += colWidths[1];
+            
+            // Coluna 3: Estoque Atual
+            doc.text(produto.manual ? 'N/A' : String(produto.disponivel), currentX, yPos + 7);
+            currentX += colWidths[2];
+            
+            // Coluna 4: Mínimo
+            doc.text(produto.manual ? 'N/A' : String(produto.minimo), currentX, yPos + 7);
+            currentX += colWidths[3];
+            
+            // Coluna 5: Validade
+            if (produto.manual || !produto.validade) {
+                doc.text('N/A', currentX, yPos + 7);
+            } else {
+                doc.text(new Date(produto.validade).toLocaleDateString('pt-BR'), currentX, yPos + 7);
+            }
+            currentX += colWidths[4];
+            
+            // Coluna 6: Disponível
+            if (produto.manual) {
+                doc.text('FORA ESTOQUE', currentX, yPos + 7);
+            } else {
+                const disponivelTexto = produto.disponivel >= produto.minimo ? 'SUFICIENTE' : 'INSUFICIENTE';
+                doc.text(disponivelTexto, currentX, yPos + 7);
+            }
+            currentX += colWidths[5];
+            
+            // Coluna 7: Status
             let situacao = 'OK';
-            let corSituacao = [46, 204, 113]; // Verde
+            let situacaoColor = '#2ecc71'; // verde padrão
             
             if (produto.manual) {
-                situacao = 'FORA DO ESTOQUE';
-                corSituacao = [149, 165, 166]; // Cinza
-            } else if (produto.quantidade > produto.disponivel) {
-                situacao = 'ESTOQUE INSUFICIENTE';
-                corSituacao = [231, 76, 60]; // Vermelho
-            } else if (produto.disponivel < produto.minimo) {
-                situacao = 'ESTOQUE BAIXO';
-                corSituacao = [243, 156, 18]; // Laranja
+                situacao = 'MANUAL';
+                situacaoColor = '#95a5a6'; // cinza
+            } else {
+                // Verificar se quantidade é numérica para comparação
+                if (!isNaN(qtdNumerica)) {
+                    if (qtdNumerica > produto.disponivel) {
+                        situacao = 'INSUFICIENTE';
+                        situacaoColor = '#e74c3c'; // vermelho
+                    } else if (produto.disponivel < produto.minimo) {
+                        situacao = 'ESTOQUE BAIXO';
+                        situacaoColor = '#f39c12'; // laranja
+                    } else if (qtdNumerica <= 0) {
+                        situacao = 'A DEFINIR';
+                        situacaoColor = '#3498db'; // azul
+                    }
+                } else {
+                    // Se quantidade não é numérica (ex: "A definir")
+                    situacao = 'A DEFINIR';
+                    situacaoColor = '#3498db'; // azul
+                }
             }
             
-            doc.setTextColor(corSituacao[0], corSituacao[1], corSituacao[2]);
-            doc.text(situacao, 160, yPos + 6);
+            doc.setTextColor(situacaoColor);
+            doc.text(situacao, currentX, yPos + 7);
             doc.setTextColor(0, 0, 0);
             
-            yPos += 8;
-            linha++;
+            yPos += 10;
         });
         
         yPos += 10;
         
-        // Totais
-        doc.setFontSize(11);
-        doc.setFont('helvetica', 'bold');
-        doc.text(`Total de Itens: ${produtosSelecionados.length}`, 15, yPos);
-        doc.text(`Quantidade Total: ${produtosSelecionados.reduce((total, p) => total + p.quantidade, 0)}`, pageWidth - 60, yPos);
+        // Resumo do pedido
+        doc.setFillColor(240, 240, 240);
+        doc.setDrawColor(200, 200, 200);
+        doc.rect(margin, yPos, contentWidth, 25, 'FD'); // FD = Fill and Draw
         
-        yPos += 10;
-        
-        // Assinatura
-        doc.setDrawColor(150, 150, 150);
-        doc.line(pageWidth - 100, yPos + 15, pageWidth - 15, yPos + 15);
         doc.setFontSize(10);
+        doc.setFont('helvetica', 'bold');
+        doc.text('RESUMO DO PEDIDO', margin + 10, yPos + 8);
+        
         doc.setFont('helvetica', 'normal');
-        doc.text('Assinatura do Responsável', pageWidth - 100, yPos + 25, { align: 'center' });
+        doc.text(`Total de Itens: ${produtosSelecionados.length}`, margin + 10, yPos + 18);
+        
+        // Quantidade total apenas se houver valores numéricos
+        if (itensComQuantidadeNumerica > 0) {
+            doc.text(`Quantidade Total: ${totalQuantidadeNumerica}`, margin + 120, yPos + 18);
+        } else {
+            doc.text(`Quantidade Total: A DEFINIR`, margin + 120, yPos + 18);
+        }
+        
+        // Prioridade destacada
+        doc.setTextColor(prioridadeColor);
+        doc.text(`Prioridade: ${prioridadeUpper}`, margin + 240, yPos + 18);
+        doc.setTextColor(0, 0, 0);
+        
+        yPos += 35;
+        
+        // Assinaturas em duas colunas
+        const assinaturaWidth = (contentWidth - 20) / 2;
+        
+        // Solicitante
+        doc.setDrawColor(150, 150, 150);
+        doc.line(margin, yPos + 15, margin + assinaturaWidth, yPos + 15);
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'normal');
+        doc.text('Solicitante', margin + (assinaturaWidth / 2) - 15, yPos + 25, { align: 'center' });
+        doc.text(funcionario, margin + (assinaturaWidth / 2) - 15, yPos + 30, { align: 'center' });
+        
+        // Responsável pelo estoque
+        doc.line(margin + assinaturaWidth + 20, yPos + 15, margin + contentWidth, yPos + 15);
+        doc.text('Responsável Estoque', margin + assinaturaWidth + 20 + (assinaturaWidth / 2) - 25, yPos + 25, { align: 'center' });
+        doc.text('____________________', margin + assinaturaWidth + 20 + (assinaturaWidth / 2) - 25, yPos + 30, { align: 'center' });
         
         // Rodapé
         doc.setFontSize(8);
         doc.setTextColor(100, 100, 100);
-        doc.text('StockControl - Sistema de Controle de Estoque', pageWidth / 2, pageHeight - 10, { align: 'center' });
+        doc.text('StockControl System - Sistema de Controle de Estoque | Relatório gerado automaticamente', 
+                pageWidth / 2, pageHeight - margin, { align: 'center' });
+        doc.text(`Página 1 de 1 | Emitido em: ${new Date().toLocaleDateString('pt-BR')} ${new Date().toLocaleTimeString('pt-BR')}`, 
+                pageWidth / 2, pageHeight - margin + 5, { align: 'center' });
         
         // Salvar PDF
         const nomeArquivo = `Pedido_${setor}_${funcionario.replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.pdf`;
@@ -678,7 +845,7 @@ function gerarRelatorioPDF() {
         
     } catch (error) {
         console.error('Erro ao gerar PDF:', error);
-        mostrarNotificacao('Erro ao gerar PDF. Verifique o console.', 'erro');
+        mostrarNotificacao('Erro ao gerar PDF. Verifique se a biblioteca jsPDF está corretamente carregada.', 'erro');
     }
 }
 
