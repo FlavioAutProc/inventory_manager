@@ -12,8 +12,18 @@
     // ---------- estado ----------
     let estoque = carregarJSON('estoque', []);
     let historicoRetiradas = carregarJSON('historicoRetiradas', []);
+    let configuracoes = carregarJSON('configuracoes', configuracaoPadrao());
     let produtosSelecionadosPedido = [];
     let manualIdCounter = 1;
+
+    function configuracaoPadrao() {
+        return {
+            setores: ['Almoxarifado', 'Cozinha', 'Limpeza', 'Manutenção', 'Escritório', 'Produção', 'Vendas']
+                .map(nome => ({ id: gerarId(), nome })),
+            funcionarios: [],
+            prioridades: ['Baixa', 'Normal', 'Alta', 'Urgente'].map(nome => ({ id: gerarId(), nome })),
+        };
+    }
 
     let modoEdicaoId = null;          // null = cadastro novo | id = editando esse produto
     let produtoSelecionadoRetirada = null;
@@ -36,6 +46,10 @@
     function salvarDados() {
         localStorage.setItem('estoque', JSON.stringify(estoque));
         localStorage.setItem('historicoRetiradas', JSON.stringify(historicoRetiradas));
+    }
+
+    function salvarConfiguracoes() {
+        localStorage.setItem('configuracoes', JSON.stringify(configuracoes));
     }
 
     function gerarId() {
@@ -210,6 +224,20 @@
         btnAdicionarManual: $('btnAdicionarManual'),
         btnLimparPedido: $('btnLimparPedido'),
         btnGerarPDF: $('btnGerarPDF'),
+        btnGerarImagem: $('btnGerarImagem'),
+
+        btnThemeToggle: $('btnThemeToggle'),
+        themeToggleIcon: $('themeToggleIcon'),
+
+        formAddSetor: $('formAddSetor'),
+        inputAddSetor: $('inputAddSetor'),
+        listaSetores: $('listaSetores'),
+        formAddFuncionario: $('formAddFuncionario'),
+        inputAddFuncionario: $('inputAddFuncionario'),
+        listaFuncionarios: $('listaFuncionarios'),
+        formAddPrioridade: $('formAddPrioridade'),
+        inputAddPrioridade: $('inputAddPrioridade'),
+        listaPrioridades: $('listaPrioridades'),
     };
 
     // ============================================================
@@ -218,6 +246,7 @@
     document.addEventListener('DOMContentLoaded', inicializarApp);
 
     function inicializarApp() {
+        aplicarTemaSalvo();
         atualizarDataAtual();
         definirValidadePadrao();
         configurarNavegacao();
@@ -225,8 +254,10 @@
         configurarEventos();
         configurarModalGenerico();
         configurarModalPedidos();
+        configurarConfiguracoes();
 
         renderizarTudo();
+        renderizarConfiguracoes();
 
         // mantém abas sincronizadas — o app original não escutava mudanças
         // feitas em outra aba, então duas abas abertas divergiam em silêncio.
@@ -292,6 +323,32 @@
         els.dashboardCards.forEach(card => {
             card.addEventListener('click', () => irParaSecao(card.getAttribute('data-section')));
         });
+    }
+
+    // ============================================================
+    // tema claro/escuro
+    // ============================================================
+    function aplicarTemaSalvo() {
+        const salvo = localStorage.getItem('tema');
+        const tema = salvo === 'light' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', tema);
+        atualizarIconeTema(tema);
+        if (els.btnThemeToggle) {
+            els.btnThemeToggle.addEventListener('click', alternarTema);
+        }
+    }
+
+    function alternarTema() {
+        const atual = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+        const novo = atual === 'light' ? 'dark' : 'light';
+        document.documentElement.setAttribute('data-theme', novo);
+        localStorage.setItem('tema', novo);
+        atualizarIconeTema(novo);
+    }
+
+    function atualizarIconeTema(tema) {
+        if (!els.themeToggleIcon) return;
+        els.themeToggleIcon.className = tema === 'light' ? 'fas fa-moon' : 'fas fa-sun';
     }
 
     // ============================================================
@@ -845,7 +902,117 @@
     }
 
     // ============================================================
-    // relatório de pedidos (PDF)
+    // configurações: Setor / Funcionário / Prioridade
+    // (listas gerenciáveis pelo usuário, usadas para popular os
+    // selects do relatório de pedidos — nada aqui é obrigatório)
+    // ============================================================
+    const CONFIG_TIPOS = {
+        setor: { chave: 'setores', lista: () => els.listaSetores },
+        funcionario: { chave: 'funcionarios', lista: () => els.listaFuncionarios },
+        prioridade: { chave: 'prioridades', lista: () => els.listaPrioridades },
+    };
+
+    function configurarConfiguracoes() {
+        els.formAddSetor.addEventListener('submit', (e) => { e.preventDefault(); submeterAddConfig('setor', els.inputAddSetor); });
+        els.formAddFuncionario.addEventListener('submit', (e) => { e.preventDefault(); submeterAddConfig('funcionario', els.inputAddFuncionario); });
+        els.formAddPrioridade.addEventListener('submit', (e) => { e.preventDefault(); submeterAddConfig('prioridade', els.inputAddPrioridade); });
+    }
+
+    function submeterAddConfig(tipo, inputEl) {
+        const nome = inputEl.value.trim();
+        if (!nome) return;
+        const chave = CONFIG_TIPOS[tipo].chave;
+        const jaExiste = configuracoes[chave].some(item => item.nome.toLowerCase() === nome.toLowerCase());
+        if (jaExiste) {
+            mostrarNotificacao('Esse item já está cadastrado.', 'aviso');
+            return;
+        }
+        configuracoes[chave].push({ id: gerarId(), nome });
+        salvarConfiguracoes();
+        inputEl.value = '';
+        renderizarConfiguracoes();
+        popularSelectsPedido();
+        mostrarNotificacao(`"${nome}" adicionado!`, 'sucesso');
+    }
+
+    function removerConfigItem(tipo, id) {
+        const chave = CONFIG_TIPOS[tipo].chave;
+        configuracoes[chave] = configuracoes[chave].filter(item => item.id !== id);
+        salvarConfiguracoes();
+        renderizarConfiguracoes();
+        popularSelectsPedido();
+    }
+
+    function renderizarListaConfig(tipo) {
+        const { chave, lista } = CONFIG_TIPOS[tipo];
+        const container = lista();
+        if (!container) return;
+        const itens = configuracoes[chave];
+        if (itens.length === 0) {
+            container.innerHTML = '<p class="config-list-empty">Nenhum item cadastrado ainda.</p>';
+            return;
+        }
+        container.innerHTML = itens.map(item => `
+            <div class="config-list-item">
+                <span>${escapeHtml(item.nome)}</span>
+                <button type="button" title="Remover" onclick="StockControl.removerConfigItem('${tipo}', '${item.id}')"><i class="fas fa-trash-alt"></i></button>
+            </div>`).join('');
+    }
+
+    function renderizarConfiguracoes() {
+        renderizarListaConfig('setor');
+        renderizarListaConfig('funcionario');
+        renderizarListaConfig('prioridade');
+    }
+
+    // popula os <select> do formulário de pedidos a partir das listas de
+    // configuração; nenhum campo aqui é obrigatório para gerar o relatório
+    function popularSelectSimples(selectEl, itens, valorPadrao, tentarSelecionar) {
+        if (!selectEl) return;
+        const atual = selectEl.value;
+        selectEl.innerHTML = `<option value="">${valorPadrao}</option>` +
+            itens.map(item => `<option value="${escapeHtml(item.nome)}">${escapeHtml(item.nome)}</option>`).join('');
+        if (itens.some(i => i.nome === atual)) selectEl.value = atual;
+        else if (tentarSelecionar && itens.some(i => i.nome.toLowerCase() === tentarSelecionar.toLowerCase())) {
+            selectEl.value = itens.find(i => i.nome.toLowerCase() === tentarSelecionar.toLowerCase()).nome;
+        }
+    }
+
+    function popularSelectFuncionario() {
+        const selectEl = $('pedidoFuncionario');
+        if (!selectEl) return;
+        const atual = selectEl.value;
+        selectEl.innerHTML = `<option value="">Não informado</option>` +
+            configuracoes.funcionarios.map(item => `<option value="${escapeHtml(item.nome)}">${escapeHtml(item.nome)}</option>`).join('') +
+            `<option value="__outro__">+ Outro (digitar nome)</option>`;
+        if (configuracoes.funcionarios.some(i => i.nome === atual) || atual === '__outro__') selectEl.value = atual;
+        alternarCampoFuncionarioOutro();
+    }
+
+    function alternarCampoFuncionarioOutro() {
+        const selectEl = $('pedidoFuncionario');
+        const outroEl = $('pedidoFuncionarioOutro');
+        if (!selectEl || !outroEl) return;
+        const mostrar = selectEl.value === '__outro__';
+        outroEl.style.display = mostrar ? 'block' : 'none';
+        if (!mostrar) outroEl.value = '';
+    }
+
+    function popularSelectsPedido() {
+        popularSelectSimples($('pedidoSetor'), configuracoes.setores, 'Não informado');
+        popularSelectFuncionario();
+        popularSelectSimples($('pedidoPrioridade'), configuracoes.prioridades, 'Não informado', 'Normal');
+    }
+
+    function nomeFuncionarioSelecionado() {
+        const selectEl = $('pedidoFuncionario');
+        if (!selectEl) return '';
+        if (selectEl.value === '__outro__') return $('pedidoFuncionarioOutro').value.trim();
+        return selectEl.value;
+    }
+
+    // ============================================================
+    // relatório de pedidos (PDF / Imagem)
     // ============================================================
     function configurarModalPedidos() {
         els.btnRelatorioPedidos.addEventListener('click', abrirModalPedidos);
@@ -854,6 +1021,8 @@
         els.btnAdicionarManual.addEventListener('click', adicionarProdutoManual);
         els.btnLimparPedido.addEventListener('click', limparPedidoCompleto);
         els.btnGerarPDF.addEventListener('click', gerarRelatorioPDF);
+        els.btnGerarImagem.addEventListener('click', gerarRelatorioImagem);
+        if ($('pedidoFuncionario')) $('pedidoFuncionario').addEventListener('change', alternarCampoFuncionarioOutro);
 
         const hoje = new Date().toISOString().split('T')[0];
         if ($('pedidoData')) $('pedidoData').value = hoje;
@@ -861,6 +1030,7 @@
 
     function abrirModalPedidos() {
         els.pedidosModal.style.display = 'flex';
+        popularSelectsPedido();
         limparPedidoCompleto();
         carregarProdutosParaPedido();
     }
@@ -982,22 +1152,40 @@
         els.pedidoForm && els.pedidoForm.reset && els.pedidoForm.reset();
         const hoje = new Date().toISOString().split('T')[0];
         if ($('pedidoData')) $('pedidoData').value = hoje;
+        popularSelectsPedido();
         atualizarListaPedidosSelecionados();
         carregarProdutosParaPedido();
     }
 
+    // dados comuns aos dois formatos de relatório (PDF e Imagem) — só a
+    // presença de ao menos um produto é obrigatória, todo o resto é opcional
+    function coletarDadosPedido() {
+        return {
+            setor: $('pedidoSetor').value || '',
+            funcionario: nomeFuncionarioSelecionado(),
+            dataPedido: $('pedidoData').value || new Date().toISOString().split('T')[0],
+            prioridade: $('pedidoPrioridade').value || '',
+            observacoes: $('pedidoObservacoes').value.trim(),
+            numero: `PED${Date.now().toString().slice(-6)}`,
+        };
+    }
+
+    // cor de destaque por prioridade — reconhece as prioridades padrão pelo
+    // nome (case-insensitive) e cai para um cinza neutro em qualquer prioridade
+    // customizada cadastrada em Configurações, ou quando não informada
+    function corDaPrioridade(prioridade) {
+        const cores = { normal: [46, 204, 113], alta: [243, 156, 18], urgente: [231, 76, 60], baixa: [149, 165, 166] };
+        return cores[(prioridade || '').toLowerCase()] || [149, 165, 166];
+    }
+
     function gerarRelatorioPDF() {
         if (!window.jspdf) { console.error('jsPDF não está disponível.'); return; }
-
-        const setor = $('pedidoSetor').value;
-        const funcionario = $('pedidoFuncionario').value.trim();
-        const dataPedido = $('pedidoData').value || new Date().toISOString().split('T')[0];
-        const prioridade = $('pedidoPrioridade').value;
-        const observacoes = $('pedidoObservacoes').value.trim();
-
-        if (!setor) return mostrarNotificacao('Selecione o setor!', 'erro');
-        if (!funcionario) return mostrarNotificacao('Informe o funcionário responsável!', 'erro');
         if (produtosSelecionadosPedido.length === 0) return mostrarNotificacao('Adicione pelo menos um produto ao pedido!', 'erro');
+
+        const { setor, funcionario, dataPedido, prioridade, observacoes, numero } = coletarDadosPedido();
+        const setorTexto = setor || 'Não informado';
+        const funcionarioTexto = funcionario || 'Não informado';
+        const prioridadeTexto = prioridade || 'Não informada';
 
         try {
             const { jsPDF } = window.jspdf;
@@ -1017,13 +1205,12 @@
             doc.text('DATA EMISSÃO:', pageWidth - margin - 80, margin + 12);
             doc.text('PRIORIDADE:', pageWidth - margin - 80, margin + 20);
             doc.setFont('helvetica', 'normal');
-            doc.text(`PED${Date.now().toString().slice(-6)}`, pageWidth - margin - 30, margin + 4);
+            doc.text(numero, pageWidth - margin - 30, margin + 4);
             doc.text(new Date().toLocaleDateString('pt-BR'), pageWidth - margin - 30, margin + 12);
 
-            const coresPrioridade = { normal: [46, 204, 113], alta: [243, 156, 18], urgente: [231, 76, 60], baixa: [149, 165, 166] };
-            const [r, g, b] = coresPrioridade[prioridade] || coresPrioridade.normal;
+            const [r, g, b] = corDaPrioridade(prioridade);
             doc.setTextColor(r, g, b);
-            doc.text(prioridade.toUpperCase(), pageWidth - margin - 30, margin + 20);
+            doc.text(prioridadeTexto.toUpperCase(), pageWidth - margin - 30, margin + 20);
             doc.setTextColor(0, 0, 0);
 
             doc.setDrawColor(200, 200, 200);
@@ -1032,8 +1219,8 @@
             let yPos = margin + 38;
             doc.setFontSize(11);
             doc.setFont('helvetica', 'normal');
-            doc.text(`Setor: ${setor.toUpperCase()}`, margin, yPos);
-            doc.text(`Funcionário: ${funcionario}`, margin + 120, yPos);
+            doc.text(`Setor: ${setorTexto.toUpperCase()}`, margin, yPos);
+            doc.text(`Funcionário: ${funcionarioTexto}`, margin + 120, yPos);
             doc.text(`Data do Pedido: ${parseDataLocal(dataPedido).toLocaleDateString('pt-BR')}`, margin + 240, yPos);
 
             if (observacoes) {
@@ -1086,12 +1273,106 @@
                 yPos += 10;
             });
 
-            doc.save(`pedido_${setor}_${dataPedido}.pdf`);
+            const slugArquivo = (setor || 'pedido').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+            doc.save(`pedido_${slugArquivo}_${dataPedido}.pdf`);
             mostrarNotificacao('Relatório PDF gerado com sucesso!', 'sucesso');
         } catch (err) {
             console.error(err);
             mostrarNotificacao('Erro ao gerar o PDF. Veja o console para detalhes.', 'erro');
         }
+    }
+
+    // ============================================================
+    // relatório de pedidos — Imagem (PNG via html2canvas)
+    // ============================================================
+    function montarHtmlRelatorioImagem(dados) {
+        const { setor, funcionario, dataPedido, prioridade, observacoes, numero } = dados;
+        const [r, g, b] = corDaPrioridade(prioridade);
+        const corPrioridade = `rgb(${r},${g},${b})`;
+
+        const linhasProdutos = produtosSelecionadosPedido.map((p, i) => `
+            <tr style="background:${i % 2 === 0 ? '#F7F8FA' : '#FFFFFF'};">
+                <td style="padding:10px 12px; border-bottom:1px solid #E1E4E9; font-weight:600;">${escapeHtml(p.nome)}</td>
+                <td style="padding:10px 12px; border-bottom:1px solid #E1E4E9; font-family:'JetBrains Mono',monospace;">${escapeHtml(String(p.quantidade))}</td>
+                <td style="padding:10px 12px; border-bottom:1px solid #E1E4E9; font-family:'JetBrains Mono',monospace;">${p.manual ? '—' : escapeHtml(String(p.disponivel))}</td>
+                <td style="padding:10px 12px; border-bottom:1px solid #E1E4E9; font-family:'JetBrains Mono',monospace;">${p.validade ? formatarDataBR(p.validade) : '—'}</td>
+                <td style="padding:10px 12px; border-bottom:1px solid #E1E4E9; color:#5C6570;">${escapeHtml(p.observacao || '—')}</td>
+            </tr>`).join('');
+
+        return `
+        <div style="width:900px; background:#FFFFFF; color:#1B1F24; font-family:Arial, Helvetica, sans-serif; padding:32px;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #1B1F24; padding-bottom:16px; margin-bottom:20px;">
+                <div>
+                    <div style="font-size:22px; font-weight:800; letter-spacing:0.02em;">STOCKCONTROL</div>
+                    <div style="font-size:13px; color:#5C6570; margin-top:2px;">Relatório de Pedidos</div>
+                </div>
+                <div style="text-align:right; font-size:12px; line-height:1.7;">
+                    <div><strong>Nº DO PEDIDO:</strong> ${escapeHtml(numero)}</div>
+                    <div><strong>DATA EMISSÃO:</strong> ${new Date().toLocaleDateString('pt-BR')}</div>
+                    <div><strong>PRIORIDADE:</strong> <span style="color:${corPrioridade}; font-weight:700;">${escapeHtml((prioridade || 'Não informada').toUpperCase())}</span></div>
+                </div>
+            </div>
+
+            <div style="display:flex; gap:24px; flex-wrap:wrap; font-size:13px; margin-bottom:18px;">
+                <div><strong>Setor:</strong> ${escapeHtml((setor || 'Não informado').toUpperCase())}</div>
+                <div><strong>Funcionário:</strong> ${escapeHtml(funcionario || 'Não informado')}</div>
+                <div><strong>Data do Pedido:</strong> ${escapeHtml(formatarDataBR(dataPedido))}</div>
+            </div>
+
+            ${observacoes ? `
+            <div style="font-size:12.5px; margin-bottom:18px;">
+                <strong>OBSERVAÇÕES:</strong>
+                <div style="color:#5C6570; margin-top:4px;">${escapeHtml(observacoes)}</div>
+            </div>` : ''}
+
+            <table style="width:100%; border-collapse:collapse; font-size:12.5px;">
+                <thead>
+                    <tr style="background:#1B1F24; color:#FFFFFF;">
+                        <th style="text-align:left; padding:10px 12px; font-size:11px; letter-spacing:0.03em;">PRODUTO</th>
+                        <th style="text-align:left; padding:10px 12px; font-size:11px; letter-spacing:0.03em;">QUANTIDADE</th>
+                        <th style="text-align:left; padding:10px 12px; font-size:11px; letter-spacing:0.03em;">ESTOQUE ATUAL</th>
+                        <th style="text-align:left; padding:10px 12px; font-size:11px; letter-spacing:0.03em;">VALIDADE</th>
+                        <th style="text-align:left; padding:10px 12px; font-size:11px; letter-spacing:0.03em;">OBSERVAÇÃO</th>
+                    </tr>
+                </thead>
+                <tbody>${linhasProdutos}</tbody>
+            </table>
+
+            <div style="margin-top:20px; font-size:10.5px; color:#8A93A0; text-align:right;">
+                Gerado por StockControl em ${new Date().toLocaleString('pt-BR')}
+            </div>
+        </div>`;
+    }
+
+    function gerarRelatorioImagem() {
+        if (produtosSelecionadosPedido.length === 0) return mostrarNotificacao('Adicione pelo menos um produto ao pedido!', 'erro');
+        if (!window.html2canvas) { mostrarNotificacao('Biblioteca de imagem não carregou. Verifique sua conexão.', 'erro'); return; }
+
+        const dados = coletarDadosPedido();
+
+        const container = document.createElement('div');
+        container.className = 'report-render-offscreen';
+        container.innerHTML = montarHtmlRelatorioImagem(dados);
+        document.body.appendChild(container);
+
+        mostrarNotificacao('Gerando imagem do relatório...', 'aviso');
+
+        window.html2canvas(container.firstElementChild, { scale: 2, backgroundColor: '#FFFFFF' })
+            .then((canvas) => {
+                const slugArquivo = (dados.setor || 'pedido').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+                const link = document.createElement('a');
+                link.download = `pedido_${slugArquivo}_${dados.dataPedido}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+                mostrarNotificacao('Imagem do relatório gerada com sucesso!', 'sucesso');
+            })
+            .catch((err) => {
+                console.error(err);
+                mostrarNotificacao('Erro ao gerar a imagem. Veja o console para detalhes.', 'erro');
+            })
+            .finally(() => {
+                container.remove();
+            });
     }
 
     // ============================================================
@@ -1101,5 +1382,6 @@
         editarProduto, confirmarExclusaoProduto, retiradaRapida,
         reporEstoque, descarteVencido,
         adicionarProdutoPedido, removerProdutoPedido,
+        removerConfigItem,
     };
 })();
